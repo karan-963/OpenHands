@@ -167,10 +167,12 @@ describe("useSwitchAcpModel", () => {
     });
   });
 
-  it("falls back to the agent-settings default when the profiles surface is unavailable", async () => {
-    vi.mocked(AgentProfilesService.listProfiles).mockRejectedValue(
-      new Error("404"),
-    );
+  it("falls back to the agent-settings default when the profiles surface is unavailable with 404 (endpoint not supported)", async () => {
+    const error = Object.assign(new Error("Request failed with status 404"), {
+      isAxiosError: true,
+      response: { status: 404 },
+    });
+    vi.mocked(AgentProfilesService.listProfiles).mockRejectedValue(error);
     vi.mocked(SettingsService.saveSettings).mockResolvedValue(true);
 
     const { result } = renderSwitchHook();
@@ -184,6 +186,25 @@ describe("useSwitchAcpModel", () => {
     expect(SettingsService.saveSettings).toHaveBeenCalledWith({
       agent_settings_diff: { acp_model: "gemini-2.5-pro" },
     });
+    expect(AgentProfilesService.saveProfile).not.toHaveBeenCalled();
+  });
+
+  it("propagates the error and fails when the profiles surface fails with a non-404 error", async () => {
+    const error = Object.assign(new Error("Internal Server Error"), {
+      isAxiosError: true,
+      response: { status: 500 },
+    });
+    vi.mocked(AgentProfilesService.listProfiles).mockRejectedValue(error);
+
+    const { result } = renderSwitchHook();
+
+    result.current.mutate({ conversationId: null, model: "gemini-2.5-pro" });
+
+    await waitFor(() => {
+      expect(result.current.isError).toBe(true);
+    });
+
+    expect(SettingsService.saveSettings).not.toHaveBeenCalled();
     expect(AgentProfilesService.saveProfile).not.toHaveBeenCalled();
   });
 

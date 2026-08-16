@@ -245,8 +245,12 @@ describe("useCreateConversation", () => {
     expect(call?.[0]?.agentProfileId).toBe("profile-late");
   });
 
-  it("falls back to the agent_settings launch when the profiles fetch fails", async () => {
-    listAgentProfilesMock.mockRejectedValue(new Error("not supported"));
+  it("falls back to the agent_settings launch when the profiles fetch fails with 404 (endpoint not supported)", async () => {
+    const error = Object.assign(new Error("Request failed with status 404"), {
+      isAxiosError: true,
+      response: { status: 404 },
+    });
+    listAgentProfilesMock.mockRejectedValue(error);
     const createConversationSpy = vi
       .spyOn(AgentServerConversationService, "createConversation")
       .mockResolvedValue({
@@ -269,6 +273,33 @@ describe("useCreateConversation", () => {
     // No profile tail — the create stays on the legacy agent_settings path.
     const call = createConversationSpy.mock.lastCall;
     expect(call?.[0]?.agentProfileId).toBeUndefined();
+  });
+
+  it("propagates the error and fails launch when the profiles fetch fails with a non-404 error", async () => {
+    const error = Object.assign(new Error("Internal Server Error"), {
+      isAxiosError: true,
+      response: { status: 500 },
+    });
+    listAgentProfilesMock.mockRejectedValue(error);
+    const createConversationSpy = vi
+      .spyOn(AgentServerConversationService, "createConversation")
+      .mockResolvedValue({
+        id: "task-id",
+        app_conversation_id: "conv-1",
+        agent_server_url: "http://agent-server.local",
+      } as never);
+    createConversationSpy.mockClear();
+
+    const { result } = renderHook(() => useCreateConversation(), {
+      wrapper: ({ children }) => (
+        <QueryClientProvider client={new QueryClient()}>
+          {children}
+        </QueryClientProvider>
+      ),
+    });
+
+    await expect(result.current.mutateAsync({ query: "hello" })).rejects.toThrow("Internal Server Error");
+    expect(createConversationSpy).not.toHaveBeenCalled();
   });
 
   it("invalidates the conversation list and start-tasks queries on success", async () => {

@@ -28,6 +28,7 @@ import {
   toPluginCoordinates,
   type WorkspaceMode,
 } from "#/api/conversation-metadata-store";
+import axios from "axios";
 
 export interface CreateConversationVariables {
   query?: string;
@@ -107,8 +108,16 @@ export const useCreateConversation = () => {
           queryFn: AgentProfilesService.listProfiles,
           ...AGENT_PROFILES_RETRY_OPTIONS,
         });
-      } catch {
-        // Profiles unavailable → legacy agent_settings launch.
+      } catch (error) {
+        // Only fall back to legacy agent_settings if profiles are actually
+        // unavailable (e.g. older backend returning 404). If the request fails for
+        // other reasons (network error, 500 status), propagate the error so the
+        // launch fails explicitly and the user can retry.
+        if (axios.isAxiosError(error) && error.response?.status === 404) {
+          // Profiles unavailable → legacy agent_settings launch.
+        } else {
+          throw error;
+        }
       }
 
       const requestedAgentProfileId =
