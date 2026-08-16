@@ -13,6 +13,7 @@ import {
 } from "#/hooks/query/query-keys";
 import { agentProfileDetailQueryKey } from "#/hooks/query/use-active-acp-profile-detail";
 import { invalidateConversationQueries } from "./conversation-mutation-utils";
+import axios from "axios";
 
 interface SwitchAcpModelVars {
   /**
@@ -67,8 +68,16 @@ export const useSwitchAcpModel = () => {
           queryFn: AgentProfilesService.listProfiles,
           ...AGENT_PROFILES_RETRY_OPTIONS,
         });
-      } catch {
-        // Profiles unavailable → legacy agent_settings persist below.
+      } catch (error) {
+        // Only fall back to legacy agent_settings if profiles are actually
+        // unavailable (e.g. older backend returning 404). If the request fails for
+        // other reasons (network error, 500 status), propagate the error so the
+        // update fails explicitly and the user can retry.
+        if (axios.isAxiosError(error) && error.response?.status === 404) {
+          // Profiles unavailable → legacy agent_settings persist below.
+        } else {
+          throw error;
+        }
       }
       const activeProfile = agentProfiles?.profiles?.find(
         (profile) =>
